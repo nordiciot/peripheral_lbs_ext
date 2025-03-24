@@ -3,11 +3,58 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/sensor.h>
-
+//
+#include <zephyr/bluetooth/conn.h>
+#include <bluetooth/services/nsms.h>
+//
 #include "sensor_data_collector.h"
 
 #define SENSOR_THREAD_PRIORITY 7
 #define SENSOR_THREAD_STACK_SIZE 1024
+
+#define BUF_SIZE		64
+BT_NSMS_DEF(nsms_env, "Environmental", false, "Unknown", BUF_SIZE);
+
+static struct bt_conn *current_conn = NULL;
+
+static void connected(struct bt_conn *conn, uint8_t err)
+{
+	current_conn = bt_conn_ref(conn);
+	printk("connected in sensor_data_collector...\n");
+}
+
+static void disconnected(struct bt_conn *conn, uint8_t reason)
+{
+	if (current_conn) {
+		bt_conn_unref(current_conn);
+		current_conn = NULL;
+	}
+	printk("disconnected in sensor_data_collector...\n");
+}
+
+BT_CONN_CB_DEFINE(conn_callbacks1) = {
+	.connected = connected,
+	.disconnected = disconnected,
+
+};
+
+static bool send_sensor_value(const struct sensor_value *val, size_t size, const char *channel)
+{
+	float float_data[size];
+	char buf[BUF_SIZE];
+
+	int len = sprintf(buf, "%s ", channel);
+
+	for (size_t i = 0; i < size; i++) {
+		float_data[i] = sensor_value_to_float(&val[i]);
+
+		len += sprintf(buf + len, "%.6f ", (double)float_data[i]);
+	}
+
+	bt_nsms_set_status(&nsms_env, buf);
+	
+	return true;
+}
 
 #ifdef CONFIG_SIMULATED_SENSOR
 static const struct device *get_simulated_sensor(void)
@@ -72,18 +119,18 @@ int sensor_data_collector(void)
 		// Simulated sensor
 		sensor_channel_get(sim_dev, SENSOR_CHAN_AMBIENT_TEMP, &value.temp);
 		sensor_channel_get(sim_dev, SENSOR_CHAN_PRESS, &value.press);
-		sensor_channel_get(sim_dev, SENSOR_CHAN_HUMIDITY, &value.humidity);
-		sensor_channel_get(sim_dev, SENSOR_CHAN_ACCEL_XYZ, value.acc);
-        sensor_channel_get(sim_dev, SENSOR_CHAN_GAS_RES, &value.gas_res);
+		sensor_channel_get(sim_dev, SENSOR_CHAN_HUMIDITY, &value.humidity);		
 
-		printk("Sensor Thread Reporting!\n");
-		printk("AX: %d.%06d; AY: %d.%06d; AZ: %d.%06d\n", value.acc[0].val1,
-		       value.acc[0].val2, value.acc[1].val1, value.acc[1].val2, value.acc[2].val1,
-		       value.acc[2].val2);
+		printk("Sensor Thread Reporting!\n");		
 		printk("T: %d.%06d; P: %d.%06d; H: %d.%06d, G: %d.%06d\n\n", value.temp.val1, value.temp.val2,
 		       value.press.val1, value.press.val2, value.humidity.val1,
 		       value.humidity.val2,value.gas_res);
-								   
+
+		if (current_conn != NULL) {
+		send_sensor_value(&value.temp, 1, "temp");
+		send_sensor_value(&value.press, 1, "press");
+		send_sensor_value(&value.humidity, 1, "humidity");		
+	}			
 		k_sleep(K_SECONDS(CONFIG_APP_CONTROL_SAMPLING_INTERVAL_S));
 	}
 #else
@@ -105,7 +152,13 @@ const struct device *dev_bme280 = get_bme280_sensor();
 		printk("T: %d.%06d; P: %d.%06d; H: %d.%06d\n", value.temp.val1,
 		       value.temp.val2, value.press.val1, value.press.val2, value.humidity.val1,
 		       value.humidity.val2);
-				
+
+		if (current_conn != NULL) {
+			send_sensor_value(&value.temp, 1, "temp");
+			send_sensor_value(&value.press, 1, "press");
+			send_sensor_value(&value.humidity, 1, "humidity");	
+		}
+
 		k_sleep(K_SECONDS(CONFIG_APP_CONTROL_SAMPLING_INTERVAL_S));
 	}
 
