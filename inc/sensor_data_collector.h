@@ -8,8 +8,11 @@ typedef struct {
 	struct sensor_value temp;     // BME688
 	struct sensor_value press;    // BME688
 	struct sensor_value humidity; // BME688
-	struct sensor_value gas_res; // BME688
-	struct sensor_value gyr[3];  // BMI270
-	struct sensor_value acc[3]; // BMI270
+	//struct sensor_value gas_res; // BME688
+	//struct sensor_value gyr[3];  // BMI270
+	//struct sensor_value acc[3]; // BMI270
 } sensorsreadings;
+
+#define ENV_VALUES_CNT 3
+
 #endif 

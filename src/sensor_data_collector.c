@@ -13,6 +13,9 @@
 #define SENSOR_THREAD_STACK_SIZE 1024
 
 #define BUF_SIZE		64
+
+K_MSGQ_DEFINE(sensor_readings_queue, sizeof(sensorsreadings), 16, 4);
+
 BT_NSMS_DEF(nsms_env, "Environmental", false, "Unknown", BUF_SIZE);
 
 static struct bt_conn *current_conn = NULL;
@@ -122,15 +125,21 @@ int sensor_data_collector(void)
 		sensor_channel_get(sim_dev, SENSOR_CHAN_HUMIDITY, &value.humidity);		
 
 		printk("Sensor Thread Reporting!\n");		
-		printk("T: %d.%06d; P: %d.%06d; H: %d.%06d, G: %d.%06d\n\n", value.temp.val1, value.temp.val2,
+		printk("T: %d.%06d; P: %d.%06d; H: %d.%06d\n\n", value.temp.val1, value.temp.val2,
 		       value.press.val1, value.press.val2, value.humidity.val1,
-		       value.humidity.val2,value.gas_res);
+		       value.humidity.val2);
 
 		if (current_conn != NULL) {
-		send_sensor_value(&value.temp, 1, "temp");
-		send_sensor_value(&value.press, 1, "press");
-		send_sensor_value(&value.humidity, 1, "humidity");		
-	}			
+			send_sensor_value(&value.temp, 1, "temp");
+			send_sensor_value(&value.press, 1, "press");
+			send_sensor_value(&value.humidity, 1, "humidity");		
+		}
+
+		int ret = k_msgq_put(&sensor_readings_queue, &value, K_NO_WAIT);
+		if (ret) {
+			printk("Failed to put data into message queue\n");
+		}
+
 		k_sleep(K_SECONDS(CONFIG_APP_CONTROL_SAMPLING_INTERVAL_S));
 	}
 #else
@@ -146,8 +155,7 @@ const struct device *dev_bme280 = get_bme280_sensor();
 		sensor_channel_get(dev_bme280, SENSOR_CHAN_AMBIENT_TEMP, &value.temp);
 		sensor_channel_get(dev_bme280, SENSOR_CHAN_PRESS, &value.press);
 		sensor_channel_get(dev_bme280, SENSOR_CHAN_HUMIDITY, &value.humidity);
-				
-
+		
 		printk("Sensor Thread Reporting!\n");		
 		printk("T: %d.%06d; P: %d.%06d; H: %d.%06d\n", value.temp.val1,
 		       value.temp.val2, value.press.val1, value.press.val2, value.humidity.val1,
@@ -159,12 +167,21 @@ const struct device *dev_bme280 = get_bme280_sensor();
 			send_sensor_value(&value.humidity, 1, "humidity");	
 		}
 
+		int ret = k_msgq_put(&sensor_readings_queue, &value, K_NO_WAIT);
+		if (ret) {
+			printk("Failed to put data into message queue\n");
+		}
+
 		k_sleep(K_SECONDS(CONFIG_APP_CONTROL_SAMPLING_INTERVAL_S));
 	}
 
 #endif
 }
 
+struct k_msgq *get_sensor_readings_queue(void)
+{
+	return &sensor_readings_queue;
+}
 
 K_THREAD_DEFINE(sensor_data_collector_id, SENSOR_THREAD_STACK_SIZE, sensor_data_collector, NULL,
     NULL, NULL, SENSOR_THREAD_PRIORITY, 0, 1000);

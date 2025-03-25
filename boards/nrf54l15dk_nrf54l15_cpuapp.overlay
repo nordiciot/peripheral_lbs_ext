@@ -41,3 +41,21 @@
 		};
 	};
 };
+
+&mx25r64 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		sensor_data_ex_partition: partition@0 {
+			label = "sensor_data_ex_partition";
+			reg = <0x00000000 0x00800000>;
+		};
+	};
+};
+
+/ {
+    chosen {
+        nordic,pm-ext-flash = &mx25r64;
+    };
+};
